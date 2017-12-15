@@ -122,7 +122,7 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen) {
 		*count = 0;
 		len = rio_writen(writefd, buf, len);
 		if(totlen)
-			totlen += len;
+			*totlen += len;
 	}
 	return len;
 }
@@ -150,7 +150,7 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 			if (FD_ISSET(serverfd, &xlist) || FD_ISSET(clientfd, &xlist))
 				break;
 			if (FD_ISSET(serverfd, &rlist) &&
-					((flag = transmit(serverfd, clientfd, buf, &count, &totlen)) < 0))
+					((flag = transmit(serverfd, clientfd, buf, &count, totlen)) < 0))
 				return flag;
 			if (flag == 0)
 				break;
@@ -185,32 +185,46 @@ void *proxy(void *vargp) {
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
-		if (parseline(buf, &status) < 0)
+
+		if(parseline(buf, &status) < 0) {
 			fprintf(stderr, "parseline error: '%s'\n", buf);
-		else {
-			printf("%s\n", status.line);
-			sprintf(tmp, "%d", status.port);
-			if ((serverfd = open_clientfd(status.hostname, tmp)) < 0)
-				log(open_clientfd);
-			else {
-				if ((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
-					log(send_request);
-				else if (interrelate(serverfd, clientfd, buf, flag, &totlen) < 0)
-					log(interrelate);
-				
-				gettimeofday(&end, NULL);
-				rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
-				if(rtt < 0) {
-					printf("rtt < 0\n");
-					exit(0);
-				}
-				if(totlen > 0) {
-					rate = rate*(1-alpha) + alpha*totlen/rtt;
-					printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
-				}
-				close(serverfd);
-			}
+			return NULL;
 		}
+		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
+		int is_video = strstr(status.path, "Seg") ? 1 : 0;
+		if(is_video) {
+			;
+		}
+
+printf("%s\n", status.line);
+		sprintf(tmp, "%d", status.port);
+
+		if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
+			log(open_clientfd);
+			return NULL;
+		}
+
+		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
+			log(send_request);
+			return NULL;
+		}
+
+		if (interrelate(serverfd, clientfd, buf, flag, &totlen) < 0) {
+			log(interrelate);
+			return NULL;
+		}
+		
+		gettimeofday(&end, NULL);
+		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
+		if(rtt < 0) {
+			printf("rtt < 0\n");
+			exit(0);
+		}
+		if(totlen > 0) {
+			rate = rate*(1-alpha) + alpha*totlen/rtt/1000;
+printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
+		}
+		close(serverfd);
 	}
 	close(clientfd);
 	return NULL;
