@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
-	float alpha;
+	double alpha;
 
 	/* Check command line args */
 	if (argc != 7 && argc != 8) {
@@ -117,7 +117,7 @@ int send_request(rio_t *rio, char *buf,
 }
 
 int transmit(int readfd, int writefd, char *buf, int *count) {
-	int len;
+	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
 		*count = 0;
 		len = rio_writen(writefd, buf, len);
@@ -179,7 +179,7 @@ void *proxy(void *vargp) {
 	char buf[MAXLINE], tmp[MAXLINE];
 	int flag;
 	struct timeval start, end;
-	float intval;
+	double rtt, len, rate = 0;
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
@@ -193,12 +193,17 @@ void *proxy(void *vargp) {
 			else {
 				if ((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
 					log(send_request);
-				else if (interrelate(serverfd, clientfd, buf, flag) < 0)
-					log(interrelate);
+				else {
+					len = interrelate(serverfd, clientfd, buf, flag);
+					if (len < 0)
+						log(interrelate);
+				}
 				
 				gettimeofday(&end, NULL);
-				intval = (float)(end.tv_sec - start.tv_sec) + (float)(end.tv_usec - start.tv_usec)/(float)100000;
-				printf("%f\n", intval);
+				rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
+				if(rtt < 0) {printf("rtt < 0\n"); exit(0);}
+				rate = rate*(1-alpha) + alpha*len/rtt;
+				printf("%f\n", rate);
 				
 				close(serverfd);
 			}
