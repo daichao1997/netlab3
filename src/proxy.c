@@ -166,6 +166,7 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 	return 0;
 }
 
+int bitrate[10] = {50};
 void *proxy(void *vargp) {
 	Pthread_detach(Pthread_self());
 
@@ -192,8 +193,17 @@ void *proxy(void *vargp) {
 		}
 		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
 		int is_video = strstr(status.path, "Seg") ? 1 : 0;
-		if(is_video) {
-			;
+		if(is_video && bitrate && rate > 0) {
+			for(int i = 0; i < 10; i++) {
+				if(bitrate[i] <= rate/1.5) {
+					char *tmp1 = strstr(status.path, "vod/") + 4;
+					*tmp1 = 0;
+					char *tmp2 = strstr(status.path, "Seg");
+					char tmp3[MAXLINE];
+					snprintf(tmp3, MAXLINE, "%s%d%s", tmp1, bitrate[i], tmp2);
+					strcpy(status.path, tmp3);
+				}
+			}
 		}
 
 printf("%s\n", status.line);
