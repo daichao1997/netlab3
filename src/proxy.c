@@ -24,16 +24,16 @@ int parseline(char *line, struct status_line *status);
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd);
 int transmit(int readfd, int writefd, char *buf, int *count);
-int interrelate(int serverfd, int clientfd, char *buf, int idling);
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *len);
 void *proxy(void *vargp);
 
+double alpha;
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
-	double alpha;
-
+	
 	/* Check command line args */
 	if (argc != 7 && argc != 8) {
 		fprintf(stderr, "usage: %s <log> <alpha> <listen-port> <fake-ip> <dns-ip> <dns-port> [<www-ip>]\n", argv[0]);
@@ -125,7 +125,7 @@ int transmit(int readfd, int writefd, char *buf, int *count) {
 	return len;
 }
 
-int interrelate(int serverfd, int clientfd, char *buf, int idling) {
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *len) {
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -149,12 +149,12 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling) {
 				break;
 			if (FD_ISSET(serverfd, &rlist) &&
 					((flag = transmit(serverfd, clientfd, buf, &count)) < 0))
-				return flag;
+				return *len = flag;
 			if (flag == 0)
 				break;
 			if (FD_ISSET(clientfd, &rlist) &&
 					((flag = transmit(clientfd, serverfd, buf, &count)) < 0))
-				return flag;
+				return *len = flag;
 			if (flag == 0)
 				break;
 		}
@@ -193,18 +193,19 @@ void *proxy(void *vargp) {
 			else {
 				if ((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
 					log(send_request);
-				else {
-					len = interrelate(serverfd, clientfd, buf, flag);
-					if (len < 0)
-						log(interrelate);
-				}
+				else if (interrelate(serverfd, clientfd, buf, flag, &len) < 0)
+					log(interrelate);
 				
 				gettimeofday(&end, NULL);
 				rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
-				if(rtt < 0) {printf("rtt < 0\n"); exit(0);}
-				rate = rate*(1-alpha) + alpha*len/rtt;
-				printf("%f\n", rate);
-				
+				if(rtt < 0) {
+					printf("rtt < 0\n");
+					exit(0);
+				}
+				if(len > 0) {
+					rate = rate*(1-alpha) + alpha*len/rtt;
+					printf("alpha: %f, len: %f, rtt: %f, rate: %f\n", alpha, len, rtt, rate);
+				}
 				close(serverfd);
 			}
 		}
