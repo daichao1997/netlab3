@@ -135,6 +135,7 @@ void get_bitrate(char *buf, int *bitrate) {
 		*tmp2 = 0;
 		bitrate[i++] = atoi(tmp1);
 		*tmp2 = '\"';
+printf("Discover bitrate: %d", bitrate[i-1]);
 	}
 	qsort(bitrate, 10, sizeof(int), comp);
 }
@@ -282,7 +283,8 @@ printf("%s\n", status.path);
 			exit(0);
 		}
 		if(totlen > 0) {
-			rate = rate*(1-alpha) + alpha*totlen/rtt/1000;
+printf("OLD RATE: %f\n", rate);
+			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
 printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
 		}
 		close(serverfd);
