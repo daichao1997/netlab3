@@ -23,8 +23,8 @@ struct status_line {
 int parseline(char *line, struct status_line *status);
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd);
-int transmit(int readfd, int writefd, char *buf, int *count);
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *len);
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen);
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen);
 void *proxy(void *vargp);
 
 double alpha;
@@ -116,16 +116,18 @@ int send_request(rio_t *rio, char *buf,
 	}
 }
 
-int transmit(int readfd, int writefd, char *buf, int *count) {
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen) {
 	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
 		*count = 0;
 		len = rio_writen(writefd, buf, len);
+		if(totlen)
+			totlen += len;
 	}
 	return len;
 }
 
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *len) {
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen) {
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -148,13 +150,13 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *len) 
 			if (FD_ISSET(serverfd, &xlist) || FD_ISSET(clientfd, &xlist))
 				break;
 			if (FD_ISSET(serverfd, &rlist) &&
-					((flag = transmit(serverfd, clientfd, buf, &count)) < 0))
-				return *len = flag;
+					((flag = transmit(serverfd, clientfd, buf, &count, &totlen)) < 0))
+				return flag;
 			if (flag == 0)
 				break;
 			if (FD_ISSET(clientfd, &rlist) &&
-					((flag = transmit(clientfd, serverfd, buf, &count)) < 0))
-				return *len = flag;
+					((flag = transmit(clientfd, serverfd, buf, &count, NULL)) < 0))
+				return flag;
 			if (flag == 0)
 				break;
 		}
@@ -179,7 +181,7 @@ void *proxy(void *vargp) {
 	char buf[MAXLINE], tmp[MAXLINE];
 	int flag;
 	struct timeval start, end;
-	double rtt, len, rate = 0;
+	double rtt, totlen, rate = 0;
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
@@ -193,7 +195,7 @@ void *proxy(void *vargp) {
 			else {
 				if ((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
 					log(send_request);
-				else if (interrelate(serverfd, clientfd, buf, flag, &len) < 0)
+				else if (interrelate(serverfd, clientfd, buf, flag, &totlen) < 0)
 					log(interrelate);
 				
 				gettimeofday(&end, NULL);
@@ -202,9 +204,9 @@ void *proxy(void *vargp) {
 					printf("rtt < 0\n");
 					exit(0);
 				}
-				if(len > 0) {
-					rate = rate*(1-alpha) + alpha*len/rtt;
-					printf("alpha: %f, len: %f, rtt: %f, rate: %f\n", alpha, len, rtt, rate);
+				if(totlen > 0) {
+					rate = rate*(1-alpha) + alpha*totlen/rtt;
+					printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
 				}
 				close(serverfd);
 			}
