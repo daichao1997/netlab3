@@ -23,11 +23,13 @@ struct status_line {
 int parseline(char *line, struct status_line *status);
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd);
-int transmit(int readfd, int writefd, char *buf, int *count, double *totlen);
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen);
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write);
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write);
 void *proxy(void *vargp);
 
 double alpha;
+int bitrate[10] = {100};
+
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
 	char hostname[MAXLINE], port[MAXLINE];
@@ -116,18 +118,43 @@ int send_request(rio_t *rio, char *buf,
 	}
 }
 
-int transmit(int readfd, int writefd, char *buf, int *count, double *totlen) {
+int comp(const void * elem1, const void * elem2) {
+	int f = *((int*)elem1);
+	int s = *((int*)elem2);
+	if (f < s) return  1;
+	if (f > s) return -1;
+	return 0;
+}
+
+void get_bitrate(char *buf, int *bitrate) {
+	char *tmp1, *tmp2;
+	int i = 0;
+	while(tmp1 = strstr(buf, "bitrate=\"")) {
+		tmp1 += 9;
+		tmp2 = strchr(tmp1, '\"');
+		*tmp2 = 0;
+		bitrate[i++] = atoi(tmp1);
+		*tmp2 = '\"';
+	}
+	qsort(bitrate, 10, sizeof(int), comp);
+}
+
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write) {
 	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
 		*count = 0;
-		len = rio_writen(writefd, buf, len);
-		if(totlen)
-			*totlen += len;
+		if(write) {
+			len = rio_writen(writefd, buf, len);
+			if(totlen)
+				*totlen += len;
+		}
+		else
+			get_bitrate(buf, bitrate);
 	}
 	return len;
 }
 
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen) {
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -150,12 +177,12 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 			if (FD_ISSET(serverfd, &xlist) || FD_ISSET(clientfd, &xlist))
 				break;
 			if (FD_ISSET(serverfd, &rlist) &&
-					((flag = transmit(serverfd, clientfd, buf, &count, totlen)) < 0))
+					((flag = transmit(serverfd, clientfd, buf, &count, totlen, write)) < 0))
 				return flag;
 			if (flag == 0)
 				break;
 			if (FD_ISSET(clientfd, &rlist) &&
-					((flag = transmit(clientfd, serverfd, buf, &count, NULL)) < 0))
+					((flag = transmit(clientfd, serverfd, buf, &count, NULL, 1)) < 0))
 				return flag;
 			if (flag == 0)
 				break;
@@ -166,7 +193,6 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 	return 0;
 }
 
-int bitrate[10] = {50};
 void *proxy(void *vargp) {
 	Pthread_detach(Pthread_self());
 
@@ -209,6 +235,15 @@ printf("NEW PATH: %s\n", status.path);
 			}
 		}
 
+		char oldpath[MAXLINE];
+		if(is_f4m) {
+printf("OLD PATH: %s\n", status.path);
+			strcpy(oldpath, status.path);
+			char *tmp = strstr(status.path, ".f4m");
+			strcpy(tmp, "_nolist.f4m");
+printf("NEW PATH: %s\n", status.path);
+		}
+
 printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
@@ -222,9 +257,22 @@ printf("%s\n", status.path);
 			return NULL;
 		}
 
-		if (interrelate(serverfd, clientfd, buf, flag, &totlen) < 0) {
+		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 1) < 0) {
 			log(interrelate);
 			return NULL;
+		}
+
+		if(is_f4m) {
+			strcpy(status.line, oldpath);
+			if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
+				log(send_request);
+				return NULL;
+			}
+
+			if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
+				log(interrelate);
+				return NULL;
+			}
 		}
 		
 		gettimeofday(&end, NULL);
