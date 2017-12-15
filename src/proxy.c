@@ -196,17 +196,20 @@ void *proxy(void *vargp) {
 		if(is_video && bitrate && rate > 0) {
 			for(int i = 0; i < 10; i++) {
 				if(bitrate[i] <= rate/1.5) {
+printf("OLD PATH: %s\n", status.path);
 					char *tmp1 = strstr(status.path, "vod/") + 4;
-					*tmp1 = 0;
 					char *tmp2 = strstr(status.path, "Seg");
+					*tmp1 = 0;
 					char tmp3[MAXLINE];
-					snprintf(tmp3, MAXLINE, "%s%d%s", tmp1, bitrate[i], tmp2);
+					snprintf(tmp3, MAXLINE, "%s%d%s", status.path, bitrate[i], tmp2);
 					strcpy(status.path, tmp3);
+printf("NEW PATH: %s\n", status.path);
+					break;
 				}
 			}
 		}
 
-printf("%s\n", status.line);
+printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
 		if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
