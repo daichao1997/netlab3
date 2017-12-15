@@ -29,6 +29,7 @@ void *proxy(void *vargp);
 
 double alpha;
 int bitrate[10] = {100};
+double rtt, totlen, rate = 0;
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
@@ -209,7 +210,6 @@ void *proxy(void *vargp) {
 	char buf[MAXLINE], tmp[MAXLINE];
 	int flag;
 	struct timeval start, end;
-	double rtt, totlen, rate = 0;
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
