@@ -197,7 +197,7 @@ void *proxy(void *vargp) {
 					log(interrelate);
 				
 				gettimeofday(&end, NULL);
-				intval = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec)/100000;
+				intval = (float)(end.tv_sec - start.tv_sec) + (float)(end.tv_usec - start.tv_usec)/(float)100000;
 				printf("%f\n", intval);
 				
 				close(serverfd);
