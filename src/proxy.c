@@ -287,16 +287,10 @@ printf("%s\n", status.path);
 			log(interrelate);
 			return NULL;
 		}
-// this clientfd may be expired!
+
 		if(is_f4m) {
-//printf("old serverfd: %d\n", serverfd);
 			strcpy(status.path, oldpath);
-			//close(serverfd);
-			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
-				log(open_clientfd);
-				return NULL;
-			}
-//printf("new serverfd: %d\n", serverfd);
+
 			if((flag = send_fake_request(buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
