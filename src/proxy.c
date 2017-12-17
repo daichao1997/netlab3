@@ -15,7 +15,7 @@ struct status_line {
 	char method[20];
 	char scm[20];
 	char hostname[MAXLINE];
-	int  port;
+	int	port;
 	char path[MAXLINE];
 	char version[20];
 };
@@ -30,12 +30,14 @@ void *proxy(void *vargp);
 double alpha;
 int bitrate[10] = {100};
 double rtt, totlen, rate = 0;
+struct sockaddr_in fake_addr;
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
+	
 	
 	/* Check command line args */
 	if (argc != 7 && argc != 8) {
@@ -47,7 +49,11 @@ int main(int argc, char *argv[]) {
 		if(argc == 8) ;
 	}
 
-	listenfd = Open_listenfd(argv[3]);
+	fake_addr.sin_family = AF_INET;
+	fake_addr.sin_port = htons(0);
+	fake_addr.sin_addr.s_addr = inet_addr(argv[4]);
+
+	listenfd = open_listenfd(argv[3]);
 
 	while ("serve forever") {
 		struct sockaddr clientaddr;
@@ -144,7 +150,7 @@ int send_fake_request(char *buf,struct status_line *status, int serverfd, int cl
 int comp(const void * elem1, const void * elem2) {
 	int f = *((int*)elem1);
 	int s = *((int*)elem2);
-	if (f < s) return  1;
+	if (f < s) return	1;
 	if (f > s) return -1;
 	return 0;
 }
@@ -219,7 +225,42 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 	}
 	return 0;
 }
+int open_clientfd2(char *hostname, char *port) {
+	int clientfd, rc;
+	struct addrinfo hints, *listp, *p;
 
+	/* Get a list of potential server addresses */
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_socktype = SOCK_STREAM;	/* Open a connection */
+	hints.ai_flags = AI_NUMERICSERV;	/* ... using a numeric port arg. */
+	hints.ai_flags |= AI_ADDRCONFIG;	/* Recommended for connections */
+	if ((rc = getaddrinfo(hostname, port, &hints, &listp)) != 0) {
+		fprintf(stderr, "getaddrinfo failed (%s:%s): %s\n", hostname, port, gai_strerror(rc));
+		return -2;
+	}
+
+	/* Walk the list for one that we can successfully connect to */
+	for (p = listp; p; p = p->ai_next) {
+		/* Create a socket descriptor */
+		if ((clientfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
+			continue; /* Socket failed, try the next */
+		bind(clientfd, (SA *)&fake_addr, sizeof(SA));
+		/* Connect to the server */
+		if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
+			break; /* Success */
+		if (close(clientfd) < 0) { /* Connect failed, try another */	//line:netp:openclientfd:closefd
+			fprintf(stderr, "open_clientfd: close failed: %s\n", strerror(errno));
+			return -1;
+		}
+	}
+
+	/* Clean up */
+	freeaddrinfo(listp);
+	if (!p) /* All connects failed */
+		return -1;
+	else		/* The last connect succeeded */
+		return clientfd;
+}
 void *proxy(void *vargp) {
 	Pthread_detach(Pthread_self());
 
@@ -273,7 +314,7 @@ printf("NEW PATH: %s\n", status.path);
 printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
-		if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
+		if((serverfd = open_clientfd2(status.hostname, tmp)) < 0) {
 			log(open_clientfd);
 			return NULL;
 		}
@@ -290,7 +331,10 @@ printf("%s\n", status.path);
 
 		if(is_f4m) {
 			strcpy(status.path, oldpath);
-
+			if((serverfd = open_clientfd2(status.hostname, tmp)) < 0) {
+				log(open_clientfd);
+				return NULL;
+			}
 			if((flag = send_fake_request(buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
