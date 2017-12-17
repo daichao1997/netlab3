@@ -159,7 +159,7 @@ printf("enter get_bitrate\n");
 		*tmp2 = 0;
 		bitrate[i++] = atoi(tmp1);
 		*tmp2 = '\"';
-printf("Discover bitrate: %d", bitrate[i-1]);
+printf("Discover bitrate: %d\n", bitrate[i-1]);
 	}
 	qsort(bitrate, 10, sizeof(int), comp);
 }
@@ -181,7 +181,7 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int
 }
 
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
-printf("enter interrelate, write = %d\n", write);
+//printf("enter interrelate, write = %d\n", write);
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -248,14 +248,14 @@ void *proxy(void *vargp) {
 		if(is_video && bitrate && rate > 0) {
 			for(int i = 0; i < 10; i++) {
 				if(bitrate[i] <= rate/1.5) {
-//printf("OLD PATH: %s\n", status.path);
+printf("OLD PATH: %s\n", status.path);
 					char *tmp1 = strstr(status.path, "vod/") + 4;
 					char *tmp2 = strstr(status.path, "Seg");
 					*tmp1 = 0;
 					char tmp3[MAXLINE];
 					snprintf(tmp3, MAXLINE, "%s%d%s", status.path, bitrate[i], tmp2);
 					strcpy(status.path, tmp3);
-//printf("NEW PATH: %s\n", status.path);
+printf("NEW PATH: %s\n", status.path);
 					break;
 				}
 			}
@@ -270,7 +270,7 @@ printf("OLD PATH: %s\n", status.path);
 printf("NEW PATH: %s\n", status.path);
 		}
 
-//printf("%s\n", status.path);
+printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
 		if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
@@ -315,9 +315,9 @@ printf("3\n");
 			exit(0);
 		}
 		if(totlen > 0) {
-//printf("OLD RATE: %f\n", rate);
+printf("OLD RATE: %f\n", rate);
 			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
-//printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
+printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
 		}
 		close(serverfd);
 	}
