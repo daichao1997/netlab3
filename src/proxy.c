@@ -16,14 +16,14 @@ struct status_line {
 int parseline(char *line, struct status_line *status);
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd);
-int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write);
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write);
+int transmit(int readfd, int writefd, char *buf, double *totlen);
 void *proxy(void *vargp);
 
 double alpha;
 int bitrate[10] = {100};
 double rtt, totlen, rate = 0;
 struct sockaddr_in fake_addr;
+char req[MAXBUF];
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
@@ -86,10 +86,10 @@ int parseline(char *line, struct status_line *status) {
 	return 0;
 }
 
-char buf2[MAXBUF];
+
 int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd, int clientfd) {
 	int len;
-	memset(buf2, 0, sizeof(buf2));
+	memset(req, 0, sizeof(req));
 	len = snprintf(buf, MAXLINE, "%s %s %s\r\n",
 			status->method,
 			*status->path ? status->path : "/",
@@ -101,7 +101,7 @@ int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd
 	while (len != 2) {
 		if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
 			return len;
-		strcat(buf2, buf);
+		strcat(req, buf);
 		if ((len = rio_writen(serverfd, buf, len)) < 0)
 			return len;
 	}
@@ -110,7 +110,7 @@ int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd
 			(len = rio_writen(serverfd, rio->rio_bufptr, rio->rio_cnt)) < 0)
 		return len;
 
-	strcat(buf2, "\r\n");
+	strcat(req, "\r\n");
 	return 20;
 }
 
@@ -123,7 +123,7 @@ int send_fake_request(char *buf,struct status_line *status, int serverfd, int cl
 	if ((len = rio_writen(serverfd, buf, len)) < 0)
 		return len;
 
-	if ((len = rio_writen(serverfd, buf2, strlen(buf2))) < 0)
+	if ((len = rio_writen(serverfd, req, strlen(req))) < 0)
 		return len;
 
 	return 20;
@@ -137,75 +137,16 @@ int comp(const void * elem1, const void * elem2) {
 	return 0;
 }
 
-void get_bitrate(char *buf, int *bitrate) {
-	char *tmp1 = buf, *tmp2;
-	int i = 0;
-	while(tmp1 = strstr(tmp1, "bitrate=\"")) {
-		tmp1 += 9;
-		tmp2 = strchr(tmp1, '\"');
-		*tmp2 = 0;
-		bitrate[i++] = atoi(tmp1);
-		*tmp2 = '\"';
-printf("Discover bitrate: %d\n", bitrate[i-1]);
-	}
-	qsort(bitrate, 10, sizeof(int), comp);
-}
-
-int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write) {
-//printf("enter transmit, write = %d\n", write);
+int transmit(int readfd, int writefd, char *buf, double *totlen) {
 	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
-		*count = 0;
-		if(write) {
-			len = rio_writen(writefd, buf, len);
-			if(totlen)
-				*totlen += len;
-		}
-		else
-			get_bitrate(buf, bitrate);
+		len = rio_writen(writefd, buf, len);
+		if(totlen)
+			*totlen += len;
 	}
 	return len;
 }
 
-int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
-//printf("enter interrelate, write = %d\n", write);
-	int count = 0;
-	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
-	int flag;
-	fd_set rlist, xlist;
-	FD_ZERO(&rlist);
-	FD_ZERO(&xlist);
-
-	while (1) {
-		count++;
-
-		FD_SET(clientfd, &rlist);
-		FD_SET(serverfd, &rlist);
-		FD_SET(clientfd, &xlist);
-		FD_SET(serverfd, &xlist);
-
-		struct timeval timeout = {2L, 0L};
-		if ((flag = select(nfds, &rlist, NULL, &xlist, &timeout)) < 0)
-			return flag;
-		if (flag) {
-			if (FD_ISSET(serverfd, &xlist) || FD_ISSET(clientfd, &xlist))
-				break;
-			if (FD_ISSET(serverfd, &rlist) &&
-					((flag = transmit(serverfd, clientfd, buf, &count, totlen, write)) < 0))
-				return flag;
-			if (flag == 0)
-				break;
-			if (FD_ISSET(clientfd, &rlist) &&
-					((flag = transmit(clientfd, serverfd, buf, &count, NULL, 1)) < 0))
-				return flag;
-			if (flag == 0)
-				break;
-		}
-		if (count >= idling)
-			break;
-	}
-	return 0;
-}
 int open_clientfd2(char *hostname, char *port) {
 	int clientfd, rc;
 	struct addrinfo hints, *listp, *p;
@@ -242,21 +183,25 @@ int open_clientfd2(char *hostname, char *port) {
 	else		/* The last connect succeeded */
 		return clientfd;
 }
+
 void *proxy(void *vargp) {
 	Pthread_detach(Pthread_self());
 
 	int serverfd, serverfd2;
 	int clientfd = *(int *)vargp;
 	free(vargp);
-totlen = 0;
+
 	rio_t rio;
 	rio_readinitb(&rio, clientfd);
 
 	struct status_line status;
 
-	char buf[MAXLINE], tmp[MAXLINE];
+	char buf[MAXLINE];
+	char *tmp1, *tmp2, tmp3[MAXLINE];
 	int flag;
 	struct timeval start, end;
+
+	totlen = 0;
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
@@ -266,14 +211,14 @@ totlen = 0;
 
 		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
 		int is_video = strstr(status.path, "Seg") ? 1 : 0;
+
 		if(is_video && bitrate && rate > 0) {
 			for(int i = 0; i < 10; i++) {
 				if(bitrate[i] <= rate/1.5) {
 printf("OLD PATH: %s\n", status.path);
-					char *tmp1 = strstr(status.path, "vod/") + 4;
-					char *tmp2 = strstr(status.path, "Seg");
+					tmp1 = strstr(status.path, "vod/") + 4;
+					tmp2 = strstr(status.path, "Seg");
 					*tmp1 = 0;
-					char tmp3[MAXLINE];
 					snprintf(tmp3, MAXLINE, "%s%d%s", status.path, bitrate[i], tmp2);
 					strcpy(status.path, tmp3);
 printf("NEW PATH: %s\n", status.path);
@@ -286,34 +231,43 @@ printf("NEW PATH: %s\n", status.path);
 		if(is_f4m) {
 printf("OLD PATH: %s\n", status.path);
 			strcpy(oldpath, status.path);
-			char *tmp = strstr(status.path, ".f4m");
-			strcpy(tmp, "_nolist.f4m");
+			tmp1 = strstr(status.path, ".f4m");
+			strcpy(tmp1, "_nolist.f4m");
 printf("NEW PATH: %s\n", status.path);
 		}
 
 printf("%s\n", status.path);
-		sprintf(tmp, "%d", status.port);
+		sprintf(tmp3, "%d", status.port);
 
-		if((serverfd = open_clientfd2(status.hostname, tmp)) < 0)
+		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0)
 			return NULL;
 
 		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
 			return NULL;
 
-		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 1) < 0)
+		if (transmit(serverfd, clientfd, buf, &totlen) < 0)
 			return NULL;
 
 		if(is_f4m) {
 			strcpy(status.path, oldpath);
-			if((serverfd2 = open_clientfd2(status.hostname, tmp)) < 0)	
+			if((serverfd2 = open_clientfd2(status.hostname, tmp3)) < 0)	
 				return NULL;
 
 			if((flag = send_fake_request(buf, &status, serverfd2, clientfd)) < 0)
 				return NULL;
 
-			if (interrelate(serverfd2, clientfd, buf, flag, &totlen, 0) < 0) 
-				return NULL;
-
+			tmp1 = buf;
+			int i = 0;
+			read(serverfd2, buf, MAXBUF);
+			for(int i = 0; tmp1 = strstr(tmp1, "bitrate=\""); i++) {
+				tmp1 += 9;
+				tmp2 = strchr(tmp1, '\"');
+				*tmp2 = 0;
+				bitrate[i] = atoi(tmp1);
+				*tmp2 = '\"';
+printf("Discover bitrate: %d\n", bitrate[i]);
+			}
+			qsort(bitrate, 10, sizeof(int), comp);
 			close(serverfd2);
 		}
 
