@@ -128,6 +128,7 @@ int comp(const void * elem1, const void * elem2) {
 }
 
 void get_bitrate(char *buf, int *bitrate) {
+printf("enter get_bitrate\n");
 	char *tmp1, *tmp2;
 	int i = 0;
 	while(tmp1 = strstr(buf, "bitrate=\"")) {
@@ -142,6 +143,7 @@ printf("Discover bitrate: %d", bitrate[i-1]);
 }
 
 int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write) {
+printf("enter transmit, write = %d\n", write);
 	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
 		*count = 0;
@@ -157,6 +159,7 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int
 }
 
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
+printf("enter interrelate, write = %d\n", write);
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -264,6 +267,7 @@ printf("%s\n", status.path);
 		}
 // this clientfd may be expired!
 		if(is_f4m) {
+printf("Fetch f4m\n");
 			strcpy(status.path, oldpath);
 			close(serverfd);
 			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
@@ -288,9 +292,9 @@ printf("%s\n", status.path);
 			exit(0);
 		}
 		if(totlen > 0) {
-printf("OLD RATE: %f\n", rate);
+//printf("OLD RATE: %f\n", rate);
 			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
-printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
+//printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
 		}
 		close(serverfd);
 	}
