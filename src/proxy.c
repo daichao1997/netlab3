@@ -3,13 +3,6 @@
 #include <sys/time.h>
 #include "csapp.h"
 
-#define log(func) fprintf(stderr, #func" error: %s\n%s%s:%d%s\n", \
-		strerror(errno), \
-		status.scm, \
-		status.hostname, \
-		status.port, \
-		status.path)
-
 struct status_line {
 	char line[MAXLINE];
 	char method[20];
@@ -35,19 +28,18 @@ struct sockaddr_in fake_addr;
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
 	char hostname[MAXLINE], port[MAXLINE];
-	socklen_t clientlen;
-	struct sockaddr_storage clientaddr;
-	
+	struct sockaddr clientaddr;
+	socklen_t addrlen = sizeof(struct sockaddr);
 	
 	/* Check command line args */
 	if (argc != 7 && argc != 8) {
 		fprintf(stderr, "usage: %s <log> <alpha> <listen-port> <fake-ip> <dns-ip> <dns-port> [<www-ip>]\n", argv[0]);
 		exit(1);
 	}
-	else {
-		alpha = atof(argv[2]);
-		if(argc == 8) ;
-	}
+
+	alpha = atof(argv[2]);
+
+	if(argc == 8) ;
 
 	fake_addr.sin_family = AF_INET;
 	fake_addr.sin_port = htons(0);
@@ -55,12 +47,12 @@ int main(int argc, char *argv[]) {
 
 	listenfd = open_listenfd(argv[3]);
 
-	while ("serve forever") {
-		struct sockaddr clientaddr;
-		socklen_t addrlen = sizeof clientaddr;
-		int *clientfd = (int *)Malloc(sizeof(int));
-		do *clientfd = accept(listenfd, &clientaddr, &addrlen);
-		while (*clientfd < 0);
+	while (1) {
+		int *clientfd = (int *)malloc(sizeof(int));
+		do {
+			*clientfd = accept(listenfd, &clientaddr, &addrlen);
+		}
+		while(*clientfd < 0);
 
 		pthread_t tid;
 		Pthread_create(&tid, NULL, proxy, clientfd);
@@ -95,55 +87,45 @@ int parseline(char *line, struct status_line *status) {
 }
 
 char buf2[MAXBUF];
-int send_request(rio_t *rio, char *buf,
-		struct status_line *status, int serverfd, int clientfd) {
+int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd, int clientfd) {
 	int len;
 	memset(buf2, 0, sizeof(buf2));
-	if (strcmp(status->method, "CONNECT")) {
-		len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
-				"Connection: close\r\n",
-				status->method,
-				*status->path ? status->path : "/",
-				status->version);
-//printf("%s", buf);
-		if ((len = rio_writen(serverfd, buf, len)) < 0)
-			return len;
-		while (len != 2) {
-			if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
-				return len;
-//printf("%s", buf);
-			if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
-				continue;
-			strcat(buf2, buf);
-			if ((len = rio_writen(serverfd, buf, len)) < 0)
-				return len;
-		}
-		if (rio->rio_cnt &&
-				(len = rio_writen(serverfd, rio->rio_bufptr, rio->rio_cnt)) < 0)
-			return len;
-		strcat(buf2, "\r\n");
-		return 20;
-	} else {
-		len = snprintf(buf, MAXLINE, "%s 200 OK\r\n\r\n", status->version);
-		if ((len = rio_writen(clientfd, buf, len)) < 0)
-			return len;
-		return 300;
-	}
-}
-
-int send_fake_request(char *buf,struct status_line *status, int serverfd, int clientfd) {
-	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
-			"Connection: close\r\n",
+	len = snprintf(buf, MAXLINE, "%s %s %s\r\n",
 			status->method,
 			*status->path ? status->path : "/",
 			status->version);
 
 	if ((len = rio_writen(serverfd, buf, len)) < 0)
 		return len;
-//printf("%s", buf);
+
+	while (len != 2) {
+		if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
+			return len;
+		strcat(buf2, buf);
+		if ((len = rio_writen(serverfd, buf, len)) < 0)
+			return len;
+	}
+
+	if (rio->rio_cnt &&
+			(len = rio_writen(serverfd, rio->rio_bufptr, rio->rio_cnt)) < 0)
+		return len;
+
+	strcat(buf2, "\r\n");
+	return 20;
+}
+
+int send_fake_request(char *buf,struct status_line *status, int serverfd, int clientfd) {
+	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n",
+			status->method,
+			*status->path ? status->path : "/",
+			status->version);
+
+	if ((len = rio_writen(serverfd, buf, len)) < 0)
+		return len;
+
 	if ((len = rio_writen(serverfd, buf2, strlen(buf2))) < 0)
 		return len;
-//printf("%s", buf2);
+
 	return 20;
 }
 
@@ -156,7 +138,6 @@ int comp(const void * elem1, const void * elem2) {
 }
 
 void get_bitrate(char *buf, int *bitrate) {
-printf("enter get_bitrate\n");
 	char *tmp1 = buf, *tmp2;
 	int i = 0;
 	while(tmp1 = strstr(tmp1, "bitrate=\"")) {
@@ -264,7 +245,7 @@ int open_clientfd2(char *hostname, char *port) {
 void *proxy(void *vargp) {
 	Pthread_detach(Pthread_self());
 
-	int serverfd;
+	int serverfd, serverfd2;
 	int clientfd = *(int *)vargp;
 	free(vargp);
 totlen = 0;
@@ -280,10 +261,9 @@ totlen = 0;
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
 
-		if(parseline(buf, &status) < 0) {
-			fprintf(stderr, "parseline error: '%s'\n", buf);
+		if(parseline(buf, &status) < 0)
 			return NULL;
-		}
+
 		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
 		int is_video = strstr(status.path, "Seg") ? 1 : 0;
 		if(is_video && bitrate && rate > 0) {
@@ -314,49 +294,34 @@ printf("NEW PATH: %s\n", status.path);
 printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
-		if((serverfd = open_clientfd2(status.hostname, tmp)) < 0) {
-			log(open_clientfd);
+		if((serverfd = open_clientfd2(status.hostname, tmp)) < 0)
 			return NULL;
-		}
 
-		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
-			log(send_request);
+		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
 			return NULL;
-		}
 
-		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 1) < 0) {
-			log(interrelate);
+		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 1) < 0)
 			return NULL;
-		}
 
 		if(is_f4m) {
 			strcpy(status.path, oldpath);
-			if((serverfd = open_clientfd2(status.hostname, tmp)) < 0) {
-				log(open_clientfd);
+			if((serverfd2 = open_clientfd2(status.hostname, tmp)) < 0)	
 				return NULL;
-			}
-			if((flag = send_fake_request(buf, &status, serverfd, clientfd)) < 0) {
-				log(send_request);
+
+			if((flag = send_fake_request(buf, &status, serverfd2, clientfd)) < 0)
 				return NULL;
-			}
-printf("2\n");
-			if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
-				log(interrelate);
+
+			if (interrelate(serverfd2, clientfd, buf, flag, &totlen, 0) < 0) 
 				return NULL;
-			}
-printf("3\n");
-		}		
+
+			close(serverfd2);
+		}
+
 		gettimeofday(&end, NULL);
 		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
-		if(rtt < 0) {
-			printf("rtt < 0\n");
-			exit(0);
-		}
-		if(totlen > 0) {
-printf("OLD RATE: %f\n", rate);
+		if(totlen > 0)
 			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
-printf("alpha: %f, totlen: %f, rtt: %f, rate: %f\n", alpha, totlen, rtt, rate);
-		}
+
 		close(serverfd);
 	}
 	close(clientfd);
