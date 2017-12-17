@@ -137,9 +137,10 @@ int comp(const void * elem1, const void * elem2) {
 	return 0;
 }
 
+// Must use interrelate to accelarate I/O
 int transmit(int readfd, int writefd, char *buf, double *totlen) {
 	int len = 0;
-	if ((len = read(readfd, buf, MAXBUF)) > 0) {
+	while ((len = read(readfd, buf, MAXBUF)) > 0) {
 		len = rio_writen(writefd, buf, len);
 		if(totlen)
 			*totlen += len;
