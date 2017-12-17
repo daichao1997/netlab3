@@ -99,13 +99,13 @@ int send_request(rio_t *rio, char *buf,
 				status->method,
 				*status->path ? status->path : "/",
 				status->version);
-printf("%s", buf);
+//printf("%s", buf);
 		if ((len = rio_writen(serverfd, buf, len)) < 0)
 			return len;
 		while (len != 2) {
 			if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
 				return len;
-printf("%s", buf);
+//printf("%s", buf);
 			if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
 				continue;
 			strcat(buf2, buf);
@@ -134,10 +134,10 @@ int send_fake_request(char *buf,struct status_line *status, int serverfd, int cl
 
 	if ((len = rio_writen(serverfd, buf, len)) < 0)
 		return len;
-printf("%s", buf);
+//printf("%s", buf);
 	if ((len = rio_writen(serverfd, buf2, strlen(buf2))) < 0)
 		return len;
-printf("%s", buf2);
+//printf("%s", buf2);
 	return 20;
 }
 
@@ -151,9 +151,9 @@ int comp(const void * elem1, const void * elem2) {
 
 void get_bitrate(char *buf, int *bitrate) {
 printf("enter get_bitrate\n");
-	char *tmp1, *tmp2;
+	char *tmp1 = buf, *tmp2;
 	int i = 0;
-	while(tmp1 = strstr(buf, "bitrate=\"")) {
+	while(tmp1 = strstr(tmp1, "bitrate=\"")) {
 		tmp1 += 9;
 		tmp2 = strchr(tmp1, '\"');
 		*tmp2 = 0;
@@ -289,14 +289,14 @@ printf("NEW PATH: %s\n", status.path);
 		}
 // this clientfd may be expired!
 		if(is_f4m) {
-printf("old serverfd: %d\n", serverfd);
+//printf("old serverfd: %d\n", serverfd);
 			strcpy(status.path, oldpath);
 			//close(serverfd);
 			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
 				log(open_clientfd);
 				return NULL;
 			}
-printf("new serverfd: %d\n", serverfd);
+//printf("new serverfd: %d\n", serverfd);
 			if((flag = send_fake_request(buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
