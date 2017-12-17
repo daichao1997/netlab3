@@ -264,7 +264,12 @@ printf("%s\n", status.path);
 		}
 // this clientfd may be expired!
 		if(is_f4m) {
-			strcpy(status.line, oldpath);
+			strcpy(status.path, oldpath);
+			close(serverfd);
+			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
+				log(open_clientfd);
+				return NULL;
+			}
 			if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
