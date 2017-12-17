@@ -97,11 +97,13 @@ int send_request(rio_t *rio, char *buf,
 				status->method,
 				*status->path ? status->path : "/",
 				status->version);
+printf("%s", buf);
 		if ((len = rio_writen(serverfd, buf, len)) < 0)
 			return len;
 		while (len != 2) {
 			if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
 				return len;
+printf("%s", buf);
 			if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
 				continue;
 			if ((len = rio_writen(serverfd, buf, len)) < 0)
@@ -226,14 +228,14 @@ void *proxy(void *vargp) {
 		if(is_video && bitrate && rate > 0) {
 			for(int i = 0; i < 10; i++) {
 				if(bitrate[i] <= rate/1.5) {
-printf("OLD PATH: %s\n", status.path);
+//printf("OLD PATH: %s\n", status.path);
 					char *tmp1 = strstr(status.path, "vod/") + 4;
 					char *tmp2 = strstr(status.path, "Seg");
 					*tmp1 = 0;
 					char tmp3[MAXLINE];
 					snprintf(tmp3, MAXLINE, "%s%d%s", status.path, bitrate[i], tmp2);
 					strcpy(status.path, tmp3);
-printf("NEW PATH: %s\n", status.path);
+//printf("NEW PATH: %s\n", status.path);
 					break;
 				}
 			}
@@ -248,7 +250,7 @@ printf("OLD PATH: %s\n", status.path);
 printf("NEW PATH: %s\n", status.path);
 		}
 
-printf("%s\n", status.path);
+//printf("%s\n", status.path);
 		sprintf(tmp, "%d", status.port);
 
 		if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
@@ -267,14 +269,14 @@ printf("%s\n", status.path);
 		}
 // this clientfd may be expired!
 		if(is_f4m) {
-printf("Fetch f4m\n");
+printf("old serverfd: %d\n", serverfd);
 			strcpy(status.path, oldpath);
 			//close(serverfd);
 			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
 				log(open_clientfd);
 				return NULL;
 			}
-printf("1\n");
+printf("new serverfd: %d\n", serverfd);
 			if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
