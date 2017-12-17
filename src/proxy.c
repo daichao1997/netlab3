@@ -226,7 +226,7 @@ void *proxy(void *vargp) {
 	int serverfd;
 	int clientfd = *(int *)vargp;
 	free(vargp);
-
+totlen = 0;
 	rio_t rio;
 	rio_readinitb(&rio, clientfd);
 
