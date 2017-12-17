@@ -88,9 +88,11 @@ int parseline(char *line, struct status_line *status) {
 	return 0;
 }
 
+char buf2[MAXBUF];
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd) {
 	int len;
+	memset(buf2, 0, sizeof(buf2));
 	if (strcmp(status->method, "CONNECT")) {
 		len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
 				"Connection: close\r\n",
@@ -106,12 +108,14 @@ printf("%s", buf);
 printf("%s", buf);
 			if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
 				continue;
+			strcat(buf2, buf);
 			if ((len = rio_writen(serverfd, buf, len)) < 0)
 				return len;
 		}
 		if (rio->rio_cnt &&
 				(len = rio_writen(serverfd, rio->rio_bufptr, rio->rio_cnt)) < 0)
 			return len;
+		strcat(buf2, "\r\n");
 		return 20;
 	} else {
 		len = snprintf(buf, MAXLINE, "%s 200 OK\r\n\r\n", status->version);
@@ -119,6 +123,22 @@ printf("%s", buf);
 			return len;
 		return 300;
 	}
+}
+
+int send_fake_request(char *buf,struct status_line *status, int serverfd, int clientfd) {
+	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
+			"Connection: close\r\n",
+			status->method,
+			*status->path ? status->path : "/",
+			status->version);
+
+	if ((len = rio_writen(serverfd, buf, len)) < 0)
+		return len;
+printf("%s", buf);
+	if ((len = rio_writen(serverfd, buf2, strlen(buf2))) < 0)
+		return len;
+printf("%s", buf2);
+	return 20;
 }
 
 int comp(const void * elem1, const void * elem2) {
@@ -277,7 +297,7 @@ printf("old serverfd: %d\n", serverfd);
 				return NULL;
 			}
 printf("new serverfd: %d\n", serverfd);
-			if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
+			if((flag = send_fake_request(buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
 			}
