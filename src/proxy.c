@@ -143,7 +143,7 @@ printf("Discover bitrate: %d", bitrate[i-1]);
 }
 
 int transmit(int readfd, int writefd, char *buf, int *count, double *totlen, int write) {
-printf("enter transmit, write = %d\n", write);
+//printf("enter transmit, write = %d\n", write);
 	int len = 0;
 	if ((len = read(readfd, buf, MAXBUF)) > 0) {
 		*count = 0;
@@ -269,22 +269,23 @@ printf("%s\n", status.path);
 		if(is_f4m) {
 printf("Fetch f4m\n");
 			strcpy(status.path, oldpath);
-			close(serverfd);
+			//close(serverfd);
 			if((serverfd = open_clientfd(status.hostname, tmp)) < 0) {
 				log(open_clientfd);
 				return NULL;
 			}
+printf("1\n");
 			if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
 				log(send_request);
 				return NULL;
 			}
-
+printf("2\n");
 			if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
 				log(interrelate);
 				return NULL;
 			}
-		}
-		
+printf("3\n");
+		}		
 		gettimeofday(&end, NULL);
 		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
 		if(rtt < 0) {
