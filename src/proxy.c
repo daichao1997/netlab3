@@ -28,6 +28,7 @@ struct sockaddr_in fakeaddr;
 char req[MAXBUF]; // HTTP request (with no header)
 char wwwip[MAXLINE] = {0}; // custom server IP
 FILE *logfile;
+char *proxyport;
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
@@ -46,6 +47,7 @@ int main(int argc, char *argv[]) {
 	alpha = atof(argv[2]);
 
 	listenfd = open_listenfd(argv[3]);
+	proxyport = argv[3];
 
 	fakeaddr.sin_family = AF_INET;
 	fakeaddr.sin_addr.s_addr = inet_addr(argv[4]);
@@ -93,7 +95,7 @@ int parseline(char *line, struct status_line *status) {
 		status->port = atoi(pos + 1);
 	}
 
-	if(!strcmp(status->hostname, "localhost")) {
+	if(!strcmp(status->hostname, "localhost") && atoi(proxyport) == status->port) {
 		strcpy(status->hostname, "video.pku.edu.cn");
 		status->port = 8080;
 	}
