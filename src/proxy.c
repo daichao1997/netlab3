@@ -73,13 +73,14 @@ int main(int argc, char *argv[]) {
 int parseline(char *line, struct status_line *status) {
 	status->port = 8080;
 	strcpy(status->line, line);
-
+	// A complete header
 	if (sscanf(line, "%s %[a-z]://%[^/]%s %s",
 				status->method,
 				status->scm,
 				status->hostname,
 				status->path,
 				status->version) != 5) {
+		// A simplified header
 		if (sscanf(line, "%s %s %s",
 					status->method,
 					status->hostname,
@@ -94,8 +95,9 @@ int parseline(char *line, struct status_line *status) {
 		*pos = 0;
 		status->port = atoi(pos + 1);
 	}
-
-	if(!strcmp(status->hostname, "localhost") && atoi(proxyport) == status->port) {
+	// In a reverse proxy, "localhost" will be omitted in the HTTP request header
+	if(status->hostname[0] == '/') {
+		strcpy(status->path, status->hostname);
 		strcpy(status->hostname, "video.pku.edu.cn");
 		status->port = 8080;
 	}
@@ -107,33 +109,34 @@ int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd
 	int len;
 	memset(req, 0, sizeof(req));
 	len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
-			"Connection: close\r\n",
+			"Connection: close\r\n",	// Do not keep TCP connection alive
 			status->method,
 			*status->path ? status->path : "/",
 			status->version);
-
+	// Send request header to server
 	if ((len = rio_writen(serverfd, buf, len)) < 0)
 		return len;
-
+	// Send request body to server
 	while (len != 2) {
 		if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
 			return len;
-		// Ignore "Connection" field in the original request
+		// Ignore original "Connection" and "Proxy-Connection" field
 		if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
 				continue;
 		strcat(req, buf);
 		if ((len = rio_writen(serverfd, buf, len)) < 0)
 			return len;
 	}
-
+	// Send remaining content, normally "\r\n"
 	if (rio->rio_cnt &&
 			(len = rio_writen(serverfd, rio->rio_bufptr, rio->rio_cnt)) < 0)
 		return len;
-
+	// Finish recording the request
 	strcat(req, "\r\n");
 	return 20;
 }
 
+// Replay the request, but "status" has been modified
 int send_fake_request(char *buf,struct status_line *status, int serverfd, int clientfd) {
 	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
 			"Connection: close\r\n",
@@ -150,6 +153,7 @@ int send_fake_request(char *buf,struct status_line *status, int serverfd, int cl
 	return 20;
 }
 
+// Sort bitrate[] in decreasing order
 int comp(const void * elem1, const void * elem2) {
 	int f = *((int*)elem1);
 	int s = *((int*)elem2);
@@ -171,7 +175,6 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen) {
 }
 
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
-//printf("enter interrelate, write = %d\n", write);
 	int count = 0;
 	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
 	int flag;
@@ -205,6 +208,7 @@ int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totle
 	return 0;
 }
 
+// Originated from "open_clientfd" in csapp.c
 int open_clientfd2(char *hostname, char *port) {
 	int clientfd, rc;
 	struct addrinfo hints, *listp, *p;
@@ -224,7 +228,10 @@ int open_clientfd2(char *hostname, char *port) {
 		/* Create a socket descriptor */
 		if ((clientfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
 			continue; /* Socket failed, try the next */
+		
+		// Special: bind this clientfd to our fake IP
 		bind(clientfd, (SA *)&fakeaddr, sizeof(SA));
+		
 		/* Connect to the server */
 		if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
 			break; /* Success */
@@ -255,6 +262,7 @@ void *proxy(void *vargp) {
 	struct status_line status;
 
 	char buf[MAXLINE];
+	char oldpath[MAXLINE]; // Remember the original path, if we are going to send a modified path
 	char *tmp1, *tmp2, tmp3[MAXLINE];
 	int flag;
 	struct timeval start, end;
@@ -271,6 +279,8 @@ void *proxy(void *vargp) {
 		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
 		int is_video = strstr(status.path, "Seg") ? 1 : 0;
 
+		// If we are requesting a video chunk,
+		// choose a bitrate, and modify "status.path".
 		if(is_video && bitrate && rate > 0) {
 			for(int i = 0; i < 10; i++) {
 				if(bitrate[i] <= rate/1.5) {
@@ -287,7 +297,7 @@ printf("NEW PATH: %s\n", status.path);
 			}
 		}
 
-		char oldpath[MAXLINE];
+		// If we are requesting an f4m file, modify "status.path".
 		if(is_f4m) {
 printf("OLD PATH: %s\n", status.path);
 			strcpy(oldpath, status.path);
@@ -299,6 +309,7 @@ printf("NEW PATH: %s\n", status.path);
 printf("%s\n", status.path);
 		sprintf(tmp3, "%d", status.port);
 
+		// Use custom www-ip given in the command line, or use DNS service.
 		if(strlen(wwwip) != 0)
 			strcpy(status.hostname, wwwip);
 		else if(!strcmp(status.hostname, "video.pku.edu.cn")) {
@@ -306,19 +317,20 @@ printf("%s\n", status.path);
 			resolve("video.pku.edu.cn", "8080", NULL, &result);
 			strcpy(status.hostname, inet_ntoa(((struct sockaddr_in *)result->ai_addr)->sin_addr));
 		}
-
+		// Establish a connection to the server.
 		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0) {
 			return NULL;
 		}
-
+		// Send HTTP request (might have been modified).
 		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
 			return NULL;
 		}
-
+		// Send response back using I/O multiplexing.
 		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
 			return NULL;
 		}
-
+		// If we are requesting an f4m file, fetch the one with bitrates
+		// but do not send it back to the client.
 		if(is_f4m) {
 			strcpy(status.path, oldpath);
 			if((serverfd2 = open_clientfd2(status.hostname, tmp3)) < 0)	
@@ -327,6 +339,7 @@ printf("%s\n", status.path);
 			if((flag = send_fake_request(buf, &status, serverfd2, clientfd)) < 0)
 				return NULL;
 
+			// Discover available bitrates.
 			tmp1 = buf;
 			int i = 0;
 			read(serverfd2, buf, MAXBUF);
@@ -342,6 +355,7 @@ printf("Discover bitrate: %d\n", bitrate[i]);
 			close(serverfd2);
 		}
 
+		// Update statistics.
 		gettimeofday(&end, NULL);
 		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
 		if(totlen > 0)
