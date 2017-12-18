@@ -16,7 +16,7 @@ static uint16_t transcation_id = 0;
  */
 size_t addr2dns( char * addr, char * dst); 
 size_t dns2addr( char * dns, char * addr);
-int open_clientfd();
+static int open_clientfd();
 
 
 
@@ -214,7 +214,7 @@ size_t resolve_request_info(char * payload, char *(*dst)[])
  *
  * @returns 0 if success, -1 otherwise
  */
-int open_clientfd()
+static int open_clientfd()
 {
 	int clientfd;
 	if((clientfd = socket(AF_INET,SOCK_DGRAM,0)) == -1)
