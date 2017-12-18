@@ -20,15 +20,14 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen);
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write);
 void *proxy(void *vargp);
 
-double alpha;
+double alpha, rtt, totlen, rate = 0;
 int bitrate[10] = {100};
-double rtt, totlen, rate = 0;
-struct sockaddr_in fake_addr;
+struct sockaddr_in fakeaddr, dnsaddr;
 char req[MAXBUF]; // HTTP request (with no header)
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
-	char hostname[MAXLINE], port[MAXLINE];
+	char port[MAXLINE];
 	struct sockaddr clientaddr;
 	socklen_t addrlen = sizeof(struct sockaddr);
 	
@@ -40,13 +39,16 @@ int main(int argc, char *argv[]) {
 
 	alpha = atof(argv[2]);
 
-	if(argc == 8) ;
-
-	fake_addr.sin_family = AF_INET;
-	fake_addr.sin_port = htons(0);
-	fake_addr.sin_addr.s_addr = inet_addr(argv[4]);
-
 	listenfd = open_listenfd(argv[3]);
+
+	fakeaddr.sin_family = AF_INET;
+	fakeaddr.sin_addr.s_addr = inet_addr(argv[4]);
+	fakeaddr.sin_port = htons(0);
+
+	dnsaddr.sin_family = AF_INET;
+	dnsaddr.sin_addr.s_addr = argv[5];
+	dnsaddr.sin_port = argv[6];
+	if(argc == 8) ;
 
 	while (1) {
 		int *clientfd = (int *)malloc(sizeof(int));
@@ -209,7 +211,7 @@ int open_clientfd2(char *hostname, char *port) {
 		/* Create a socket descriptor */
 		if ((clientfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) < 0)
 			continue; /* Socket failed, try the next */
-		bind(clientfd, (SA *)&fake_addr, sizeof(SA));
+		bind(clientfd, (SA *)&fakeaddr, sizeof(SA));
 		/* Connect to the server */
 		if (connect(clientfd, p->ai_addr, p->ai_addrlen) != -1)
 			break; /* Success */

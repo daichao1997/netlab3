@@ -1,0 +1,25 @@
+To use resolve() in proxy
+
+1.call init_mydns(const char * dns_server_ip, 
+					uint32_t dns_port,
+					const char * client_ip);
+	***client_ip is used to find the shortest path, it's not 
+	the ip address of proxy but of the client
+
+2.call set_client_ip(const char * client_ip)
+	
+	if you want to change the client ip address during using
+	the nameserver after calling init_mydns()
+	use this function
+
+3.call resolve(const char * hostaddr, const char * port,
+				const struct addrinfo * hints, struct addrinfo ** res)
+
+	call it like this:
+		resolve("video.pku.edu.cn","8080",NULL,&result)
+
+	it's just like getaddrinfo() in UNIX systems
+
+
+To run nameserver, use
+	./nameserver [-r]  <log> <ip> <port> <servers> <LSAs>
