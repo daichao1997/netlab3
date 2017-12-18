@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
 }
 
 int parseline(char *line, struct status_line *status) {
-	status->port = 80;
+	status->port = 8080;
 	strcpy(status->line, line);
 
 	if (sscanf(line, "%s %[a-z]://%[^/]%s %s",
@@ -91,6 +91,11 @@ int parseline(char *line, struct status_line *status) {
 	if (pos) {
 		*pos = 0;
 		status->port = atoi(pos + 1);
+	}
+
+	if(!strcmp(status->hostname, "localhost")) {
+		strcpy(status->hostname, "video.pku.edu.cn");
+		status->port = 8080;
 	}
 	return 0;
 }
