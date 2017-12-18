@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
 int parseline(char *line, struct status_line *status) {
 	status->port = 8080;
 	strcpy(status->line, line);
-
+printf("0: %s\n", status->line);
 	if (sscanf(line, "%s %[a-z]://%[^/]%s %s",
 				status->method,
 				status->scm,
@@ -88,14 +88,14 @@ int parseline(char *line, struct status_line *status) {
 		*status->scm = *status->path = 0;
 	} else
 		strcat(status->scm, "://");
-
+printf("1: %s\n", status->hostname);
 	char *pos = strchr(status->hostname, ':');
 	if (pos) {
 		*pos = 0;
 		status->port = atoi(pos + 1);
 	}
-
-	if(!strcmp(status->hostname, "localhost") && atoi(proxyport) == status->port) {
+printf("2: %s\n", status->hostname);
+	if(!strcmp(status->hostname, "/")) {
 		strcpy(status->hostname, "video.pku.edu.cn");
 		status->port = 8080;
 	}
@@ -267,7 +267,7 @@ void *proxy(void *vargp) {
 
 		if(parseline(buf, &status) < 0)
 			return NULL;
-
+printf("parseline: %s\n", status.hostname);
 		int is_f4m = strstr(status.path, ".f4m") ? 1 : 0;
 		int is_video = strstr(status.path, "Seg") ? 1 : 0;
 
@@ -306,7 +306,7 @@ printf("%s\n", status.path);
 			resolve("video.pku.edu.cn", "8080", NULL, &result);
 			strcpy(status.hostname, inet_ntoa(((struct sockaddr_in *)result->ai_addr)->sin_addr));
 		}
-
+printf("open_clientfd2: %s\n", status.hostname);
 		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0) {
 			return NULL;
 		}
