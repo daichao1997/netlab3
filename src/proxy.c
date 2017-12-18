@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include "csapp.h"
+#include "parse_lsa.h"
+#include "mydns.h"
 
 struct status_line {
 	char line[MAXLINE];
@@ -22,8 +24,10 @@ void *proxy(void *vargp);
 
 double alpha, rtt, totlen, rate = 0;
 int bitrate[10] = {100};
-struct sockaddr_in fakeaddr, dnsaddr;
+struct sockaddr_in fakeaddr;
 char req[MAXBUF]; // HTTP request (with no header)
+char wwwip[MAXLINE] = {0}; // custom server IP
+FILE *logfile;
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
@@ -37,6 +41,8 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
+	logfile = fopen(argv[1],"w+");
+
 	alpha = atof(argv[2]);
 
 	listenfd = open_listenfd(argv[3]);
@@ -45,10 +51,10 @@ int main(int argc, char *argv[]) {
 	fakeaddr.sin_addr.s_addr = inet_addr(argv[4]);
 	fakeaddr.sin_port = htons(0);
 
-	dnsaddr.sin_family = AF_INET;
-	dnsaddr.sin_addr.s_addr = argv[5];
-	dnsaddr.sin_port = argv[6];
-	if(argc == 8) ;
+	if(argc == 8)
+		strcpy(wwwip, argv[7]);
+
+	init_mydns(argv[5], atoi(argv[6]), argv[4]);
 
 	while (1) {
 		int *clientfd = (int *)malloc(sizeof(int));
@@ -245,6 +251,7 @@ void *proxy(void *vargp) {
 	char *tmp1, *tmp2, tmp3[MAXLINE];
 	int flag;
 	struct timeval start, end;
+	int chosen_bitrate;
 
 	totlen = 0;
 
@@ -266,6 +273,7 @@ printf("OLD PATH: %s\n", status.path);
 					*tmp1 = 0;
 					snprintf(tmp3, MAXLINE, "%s%d%s", status.path, bitrate[i], tmp2);
 					strcpy(status.path, tmp3);
+					chosen_bitrate = bitrate[i];
 printf("NEW PATH: %s\n", status.path);
 					break;
 				}
@@ -283,6 +291,14 @@ printf("NEW PATH: %s\n", status.path);
 
 printf("%s\n", status.path);
 		sprintf(tmp3, "%d", status.port);
+
+		if(strlen(wwwip) != 0)
+			strcpy(status.hostname, wwwip);
+		else if(!strcmp(status.hostname, "video.pku.edu.cn")) {
+			struct addrinfo * result;
+			resolve("video.pku.edu.cn", "8080", NULL, &result);
+			strcpy(status.hostname, inet_ntoa(((struct sockaddr_in *)result->ai_addr)->sin_addr));
+		}
 
 		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0) {
 			return NULL;
@@ -323,6 +339,11 @@ printf("Discover bitrate: %d\n", bitrate[i]);
 		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
 		if(totlen > 0)
 			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
+
+		time_t rawtime;
+		time(&rawtime);
+		fprintf(logfile, "%s %6f %6f %6f %d %s %s\n",
+						ctime(&rawtime), rtt, 8*totlen/rtt/1000, rate, chosen_bitrate, status.hostname, status.path);
 
 		close(serverfd);
 	}
