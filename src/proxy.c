@@ -340,10 +340,8 @@ printf("Discover bitrate: %d\n", bitrate[i]);
 		if(totlen > 0)
 			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
 
-		time_t rawtime;
-		time(&rawtime);
-		fprintf(logfile, "%s %6f %6f %6f %d %s %s\n",
-						ctime(&rawtime), rtt, 8*totlen/rtt/1000, rate, chosen_bitrate, status.hostname, status.path);
+		fprintf(logfile, "%d %6f %6f %6f %d %s %s\n",
+						(int)time(NULL), rtt, 8*totlen/rtt/1000, rate, chosen_bitrate, status.hostname, status.path);
 
 		close(serverfd);
 	}
