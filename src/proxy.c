@@ -24,7 +24,7 @@ double alpha;
 int bitrate[10] = {100};
 double rtt, totlen, rate = 0;
 struct sockaddr_in fake_addr;
-char req[MAXBUF];
+char req[MAXBUF]; // HTTP request (with no header)
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
@@ -91,7 +91,8 @@ int parseline(char *line, struct status_line *status) {
 int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd, int clientfd) {
 	int len;
 	memset(req, 0, sizeof(req));
-	len = snprintf(buf, MAXLINE, "%s %s %s\r\n",
+	len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
+			"Connection: close\r\n",
 			status->method,
 			*status->path ? status->path : "/",
 			status->version);
@@ -102,6 +103,9 @@ int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd
 	while (len != 2) {
 		if ((len = rio_readlineb(rio, buf, MAXLINE)) < 0)
 			return len;
+		// Ignore "Connection" field in the original request
+		if (memcmp(buf, "Proxy-Connection: ", 18) == 0 || memcmp(buf, "Connection: ", 12) == 0)
+				continue;
 		strcat(req, buf);
 		if ((len = rio_writen(serverfd, buf, len)) < 0)
 			return len;
@@ -116,7 +120,8 @@ int send_request(rio_t *rio, char *buf, struct status_line *status, int serverfd
 }
 
 int send_fake_request(char *buf,struct status_line *status, int serverfd, int clientfd) {
-	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n",
+	int len = snprintf(buf, MAXLINE, "%s %s %s\r\n" \
+			"Connection: close\r\n",
 			status->method,
 			*status->path ? status->path : "/",
 			status->version);
@@ -277,14 +282,17 @@ printf("NEW PATH: %s\n", status.path);
 printf("%s\n", status.path);
 		sprintf(tmp3, "%d", status.port);
 
-		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0)
+		if((serverfd = open_clientfd2(status.hostname, tmp3)) < 0) {
 			return NULL;
+		}
 
-		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0)
+		if((flag = send_request(&rio, buf, &status, serverfd, clientfd)) < 0) {
 			return NULL;
+		}
 
-		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0)
+		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
 			return NULL;
+		}
 
 		if(is_f4m) {
 			strcpy(status.path, oldpath);
