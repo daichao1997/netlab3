@@ -16,7 +16,7 @@ struct status_line {
 int parseline(char *line, struct status_line *status);
 int send_request(rio_t *rio, char *buf,
 		struct status_line *status, int serverfd, int clientfd);
-int transmit(int readfd, int writefd, char *buf, double *totlen);
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen);
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write);
 void *proxy(void *vargp);
 
@@ -143,14 +143,51 @@ int comp(const void * elem1, const void * elem2) {
 	return 0;
 }
 
-int transmit(int readfd, int writefd, char *buf, double *totlen) {
+// Must use interrelate to accelarate I/O
+int transmit(int readfd, int writefd, char *buf, int *count, double *totlen) {
 	int len = 0;
-	while ((len = read(readfd, buf, MAXBUF)) > 0) {
+	if ((len = read(readfd, buf, MAXBUF)) > 0) {
+		*count = 0;
 		len = rio_writen(writefd, buf, len);
 		if(totlen)
 			*totlen += len;
 	}
 	return len;
+}
+
+int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write) {
+//printf("enter interrelate, write = %d\n", write);
+	int count = 0;
+	int nfds = (serverfd > clientfd ? serverfd : clientfd) + 1;
+	int flag;
+	fd_set rlist;
+	FD_ZERO(&rlist);
+
+	while (1) {
+		count++;
+
+		FD_SET(clientfd, &rlist);
+		FD_SET(serverfd, &rlist);
+
+		struct timeval timeout = {2L, 0L};
+		if ((flag = select(nfds, &rlist, NULL, NULL, &timeout)) < 0)
+			return flag;
+		if (flag) {
+			if (FD_ISSET(serverfd, &rlist) &&
+					((flag = transmit(serverfd, clientfd, buf, &count, totlen)) < 0))
+				return flag;
+			if (flag == 0)
+				break;
+			if (FD_ISSET(clientfd, &rlist) &&
+					((flag = transmit(clientfd, serverfd, buf, &count, totlen)) < 0))
+				return flag;
+			if (flag == 0)
+				break;
+		}
+		if (count >= idling)
+			break;
+	}
+	return 0;
 }
 
 int open_clientfd2(char *hostname, char *port) {
@@ -253,7 +290,7 @@ printf("%s\n", status.path);
 			return NULL;
 		}
 
-		if (transmit(serverfd, clientfd, buf, &totlen) < 0) {
+		if (interrelate(serverfd, clientfd, buf, flag, &totlen, 0) < 0) {
 			return NULL;
 		}
 
