@@ -22,19 +22,24 @@ int transmit(int readfd, int writefd, char *buf, int *count, double *totlen);
 int interrelate(int serverfd, int clientfd, char *buf, int idling, double *totlen, int write);
 void *proxy(void *vargp);
 
-double alpha, rtt, totlen, rate = 0;
+double alpha = 0, avg_rate = 0;
 int bitrate[10] = {100};
-struct sockaddr_in fakeaddr;
-char req[MAXBUF]; // HTTP request (with no header)
-char wwwip[MAXLINE] = {0}; // custom server IP
-FILE *logfile;
 char *proxyport;
+char wwwip[MAXLINE] = {};
+struct sockaddr_in fakeaddr;
+FILE *logfile;
+
+char req[MAXBUF]; // HTTP request (with no header)
+
+sem_t sem;	// protect the average rate
 
 int main(int argc, char *argv[]) {
 	int listenfd, connfd;
 	char port[MAXLINE];
 	struct sockaddr clientaddr;
 	socklen_t addrlen = sizeof(struct sockaddr);
+
+	sem_init(&sem, 0, 1);
 	
 	/* Check command line args */
 	if (argc != 7 && argc != 8) {
@@ -267,8 +272,7 @@ void *proxy(void *vargp) {
 	int flag;
 	struct timeval start, end;
 	int chosen_bitrate;
-
-	totlen = 0;
+	double rtt, totlen = 0, rate = 0;
 
 	if ((flag = rio_readlineb(&rio, buf, MAXLINE)) > 0) {
 		gettimeofday(&start, NULL);
@@ -281,10 +285,10 @@ void *proxy(void *vargp) {
 
 		// If we are requesting a video chunk,
 		// choose a bitrate, and modify "status.path".
-		if(is_video && bitrate && rate > 0) {
+		if(is_video && bitrate && avg_rate > 0) {
 			for(int i = 0; i < 10; i++) {
 if(bitrate[i] == 0) continue;
-				if(bitrate[i] <= rate/1.5) {
+				if(bitrate[i] <= avg_rate/1.5) {
 printf("OLD PATH: %s\n", status.path);
 					tmp1 = strstr(status.path, "vod/") + 4;
 					tmp2 = strstr(status.path, "Seg");
@@ -359,11 +363,15 @@ printf("Discover bitrate: %d\n", bitrate[i]);
 		// Update statistics.
 		gettimeofday(&end, NULL);
 		rtt = (double)(end.tv_sec - start.tv_sec) + (double)(end.tv_usec - start.tv_usec)/(double)1000000;
-		if(totlen > 0)
-			rate = rate*(1-alpha) + 8*alpha*totlen/rtt/1000;
+		if(totlen > 0) {
+			P(&sem);
+			rate = 8*totlen/rtt/1000;
+			avg_rate = avg_rate*(1-alpha) + rate*alpha;
+			V(&sem);
+		}
 
 		fprintf(logfile, "%d %6f %6f %6f %d %s %s\n",
-						(int)time(NULL), rtt, 8*totlen/rtt/1000, rate, chosen_bitrate, status.hostname, status.path);
+						(int)time(NULL), rtt, rate, avg_rate, chosen_bitrate, status.hostname, status.path);
 		fflush(logfile);
 
 		close(serverfd);
